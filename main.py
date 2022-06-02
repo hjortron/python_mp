@@ -83,19 +83,9 @@ class DeliveryGenerator:
     Generates new packages for delivery
     Неправильно реализованный генератор https://docs.python.org/3/library/stdtypes.html#generator-types
     """
+    idx = 0
 
-
-    def __init__(self):
-        self.idx = 0
-        self.__gen = self.__generate()
-
-    def __iter__(self) -> "DeliveryGenerator":
-        return self
-
-    def __next__(self):
-        return next(self.__gen)
-
-    def __generate(self) -> Package:
+    def __iter__(self) -> Package:
         while True:
             package_type = random.choice(list(PackingType))
             dimensions = (
@@ -181,7 +171,7 @@ class PickUpCar:
                 raise IncorrectAddressError()
             case _:
                 time.sleep(0.01)
-                self.root.info(f"{datetime.now()}: Package idx={package.idx} delivered!")
+                self.root.info(f"{datetime.now()}: Package idx={package} delivered!")
                 with self.rlock:
                     self.delivered.value = self.delivered.value + 1
                 return package
@@ -217,9 +207,9 @@ class WarehouseDispatcher:
             delivery_queue: Queue,
             packages_queue: Queue,
             no_address_packages_queue: Queue,
-            lost,
-            rlock,
-            logs_queue,
+            lost: multiprocessing.Value,
+            rlock: multiprocessing.RLock,
+            logs_queue: Queue,
     ):
         self.delivery_queue = delivery_queue
         self.packages_queue = packages_queue
@@ -271,10 +261,12 @@ class WarehouseDispatcher:
 def do_stuff(packages_queue: Queue) -> None:
     packages_generator = DeliveryGenerator()
     cnt = 0
+    global STOP
     for package in packages_generator:
         packages_queue.put(package)
         cnt += 1
         if STOP or cnt == 1000:
+            STOP = True
             return
 
 
@@ -298,8 +290,10 @@ if __name__ == '__main__':
     Запускаем менеджер управления процессами, что бы он управлял ресурсами
     http://onreader.mdl.ru/MasteringConcurrencyInPython/content/Ch06.html
     http://onreader.mdl.ru/CPythonInternals/content/Ch10.html#0309
+    # Задаем способ создания процессов, без этого в докере происходит беда
+    # аргумент "--multiprocessing-spawn" для CMD не работает
     """
-
+    multiprocessing.set_start_method('spawn')
     with multiprocessing.Manager() as pool_manager:
         # Объявлем примитивы синхронизации процессов
         rlock = pool_manager.RLock()
